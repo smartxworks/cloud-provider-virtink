@@ -1,0 +1,2 @@
+kubeconfig: /var/run/cloud/kubeconfig
+namespace: default
