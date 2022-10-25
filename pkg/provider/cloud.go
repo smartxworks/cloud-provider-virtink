@@ -1,97 +1,110 @@
 package provider
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 
-	virtv1alpha1 "github.com/smartxworks/virtink/pkg/apis/virt/v1alpha1"
+	virtclientset "github.com/smartxworks/virtink/pkg/generated/clientset/versioned"
 	"gopkg.in/yaml.v2"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	cloudprovider "k8s.io/cloud-provider"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func init() {
+	cloudprovider.RegisterCloudProvider(ProviderName, func(config io.Reader) (cloudprovider.Interface, error) {
+		var cloudConfig CloudConfig
+		if err := yaml.NewDecoder(config).Decode(&cloudConfig); err != nil {
+			return nil, fmt.Errorf("unmarshal cloud provider config: %s", err)
+		}
+
+		var restConfig *rest.Config
+		namespace := cloudConfig.Namespace
+
+		if cloudConfig.KubeconfigPath == "" {
+			conf, err := rest.InClusterConfig()
+			if err != nil {
+				return nil, fmt.Errorf("create in-cluster config: %s", err)
+			}
+
+			restConfig = conf
+		} else {
+			kubeconfig, err := os.ReadFile(cloudConfig.KubeconfigPath)
+			if err != nil {
+				return nil, fmt.Errorf("read kubeconfig: %s", err)
+			}
+
+			clientConfig, err := clientcmd.NewClientConfigFromBytes(kubeconfig)
+			if err != nil {
+				return nil, fmt.Errorf("create client config: %s", err)
+			}
+
+			conf, err := clientConfig.ClientConfig()
+			if err != nil {
+				return nil, fmt.Errorf("get client config: %s", err)
+			}
+
+			restConfig = conf
+
+			if namespace == "" {
+				ns, _, err := clientConfig.Namespace()
+				if err != nil {
+					return nil, fmt.Errorf("get namespace: %s", err)
+				}
+				namespace = ns
+			}
+		}
+
+		kubeClient, err := kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("create Kubernetes client: %s", err)
+		}
+
+		virtClient, err := virtclientset.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("create Virtink client: %s", err)
+		}
+
+		return &cloud{
+			instances: &instancesV2Logger{
+				InstancesV2: &instancesV2{
+					namespace:  namespace,
+					virtClient: virtClient,
+				},
+			},
+			loadBalancer: &loadBalancerLogger{
+				LoadBalancer: &loadBalancer{
+					namespace:  namespace,
+					kubeClient: kubeClient,
+				},
+			},
+		}, nil
+	})
+}
 
 const (
 	ProviderName = "virtink"
 )
 
-var scheme = runtime.NewScheme()
-
-func init() {
-	cloudprovider.RegisterCloudProvider(ProviderName, virtinkCloudProviderFactory)
-	if err := corev1.AddToScheme(scheme); err != nil {
-		panic(err)
-	}
-	if err := virtv1alpha1.AddToScheme(scheme); err != nil {
-		panic(err)
-	}
+type CloudConfig struct {
+	KubeconfigPath string `yaml:"kubeconfigPath"`
+	Namespace      string `yaml:"namespace"`
 }
 
 type cloud struct {
-	client client.Client
-	config CloudConfig
+	instances    cloudprovider.InstancesV2
+	loadBalancer cloudprovider.LoadBalancer
 }
 
-type CloudConfig struct {
-	Kubeconfig string `yaml:"kubeconfig"`
-	Namespace  string `yaml:"namespace"`
-}
-
-func virtinkCloudProviderFactory(config io.Reader) (cloudprovider.Interface, error) {
-	if config == nil {
-		return nil, fmt.Errorf("no %s cloud provider config file given", ProviderName)
-	}
-
-	cloudConfig := CloudConfig{
-		Namespace: "default",
-	}
-	if err := yaml.NewDecoder(config).Decode(&cloudConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal cloud provider config: %v", err)
-	}
-	if cloudConfig.Kubeconfig == "" {
-		return nil, errors.New("kubeconfig key is required")
-	}
-
-	klog.InfoS("cloud config", "config", cloudConfig)
-
-	infraKubeconfig, err := os.ReadFile(cloudConfig.Kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	clientConfig, err := clientcmd.NewClientConfigFromBytes(infraKubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	restConfig, err := clientConfig.ClientConfig()
-	if err != nil {
-		return nil, err
-	}
-	c, err := client.New(restConfig, client.Options{
-		Scheme: scheme,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &cloud{
-		client: c,
-		config: cloudConfig,
-	}, nil
-}
+var _ cloudprovider.Interface = &cloud{}
 
 func (c *cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
 }
 
 func (c *cloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
-	return &loadBalancer{
-		client:    c.client,
-		namespace: c.config.Namespace,
-	}, true
+	return c.loadBalancer, true
 }
 
 func (c *cloud) Instances() (cloudprovider.Instances, bool) {
@@ -99,10 +112,7 @@ func (c *cloud) Instances() (cloudprovider.Instances, bool) {
 }
 
 func (c *cloud) InstancesV2() (cloudprovider.InstancesV2, bool) {
-	return &instanceV2{
-		client:    c.client,
-		namespace: c.config.Namespace,
-	}, true
+	return c.instances, true
 }
 
 func (c *cloud) Zones() (cloudprovider.Zones, bool) {

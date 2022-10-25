@@ -1,5 +1,3 @@
-config/cloud-config/kubeconfig
-
 # Binaries for programs and plugins
 *.exe
 *.exe~

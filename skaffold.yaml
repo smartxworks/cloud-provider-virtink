@@ -1,15 +1,13 @@
-apiVersion: skaffold/v2beta28
+apiVersion: skaffold/v2beta29
 kind: Config
 metadata:
-  name: virtink-cloud-controller-manager
+  name: cloud-provider-virtink
 build:
-  local:
-    useBuildkit: true
   artifacts:
-    - image: virtink-cloud-controller-manager
+    - image: virtink-ccm
       docker:
         dockerfile: Dockerfile
 deploy:
   kustomize:
     paths:
-      - config
+      - deploy

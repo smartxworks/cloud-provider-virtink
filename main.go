@@ -1,32 +1,29 @@
 package main
 
 import (
-	"os"
-
 	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/app"
 	"k8s.io/cloud-provider/app/config"
 	"k8s.io/cloud-provider/options"
-	"k8s.io/component-base/cli"
 	cliflag "k8s.io/component-base/cli/flag"
-	_ "k8s.io/component-base/metrics/prometheus/clientgo"
-	_ "k8s.io/component-base/metrics/prometheus/version"
 	"k8s.io/klog/v2"
 
 	_ "github.com/smartxworks/cloud-provider-virtink/pkg/provider"
 )
 
 func main() {
-	ccmOptions, err := options.NewCloudControllerManagerOptions()
+	opts, err := options.NewCloudControllerManagerOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
 	}
 
 	fss := cliflag.NamedFlagSets{}
-	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, app.DefaultInitFuncConstructors, fss, wait.NeverStop)
-	code := cli.Run(command)
-	os.Exit(code)
+	command := app.NewCloudControllerManagerCommand(opts, cloudInitializer, app.DefaultInitFuncConstructors, fss, wait.NeverStop)
+
+	if err := command.Execute(); err != nil {
+		klog.Fatalf("unable to execute command: %v", err)
+	}
 }
 
 func cloudInitializer(config *config.CompletedConfig) cloudprovider.Interface {

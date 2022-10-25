@@ -1,26 +1,16 @@
-# Build the manager binary
 FROM golang:1.19-alpine AS builder
 
 WORKDIR /workspace
-# Copy the Go Modules manifests
+
 COPY go.mod go.mod
 COPY go.sum go.sum
-# cache deps before building and copying source so that we don't need to re-download as much
-# and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
-# Copy the go source
-COPY cmd/virtink-cloud-controller-manager/main.go cmd/virtink-cloud-controller-manager/main.go
+COPY main.go main.go
 COPY pkg/ pkg/
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -a main.go
 
-# Build
-RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux go build -a -o virtink-cloud-controller-manager cmd/virtink-cloud-controller-manager/main.go
-
-# Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM alpine
-WORKDIR /
-COPY --from=builder /workspace/virtink-cloud-controller-manager .
-USER 65532:65532
 
-ENTRYPOINT ["/virtink-cloud-controller-manager"]
+COPY --from=builder /workspace/main /usr/bin/virtink-ccm
+ENTRYPOINT ["virtink-ccm"]
