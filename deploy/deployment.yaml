@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: virtink-ccm
+  namespace: kube-system
+  labels:
+    name: virtink-ccm
+spec:
+  selector:
+    matchLabels:
+      name: virtink-ccm
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: virtink-ccm
+    spec:
+      serviceAccountName: virtink-ccm
+      tolerations:
+        - key: node.cloudprovider.kubernetes.io/uninitialized
+          value: "true"
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      containers:
+        - name: manager
+          image: virtink-ccm:latest
+          args:
+            - --cloud-provider=virtink
+            - --cloud-config=/etc/virtink-ccm/cloud-config
+          volumeMounts:
+            - name: cloud-config
+              mountPath: /etc/virtink-ccm
+              readOnly: true
+            - name: kubeconfig
+              mountPath: /etc/kubernetes
+              readOnly: true
+      volumes:
+        - name: cloud-config
+          configMap:
+            name: cloud-config
+            items:
+              - key: cloud-config
+                path: cloud-config
+        - name: kubeconfig
+          secret:
+            secretName: kubeconfig
+            items:
+              - key: kubeconfig
+                path: kubeconfig
