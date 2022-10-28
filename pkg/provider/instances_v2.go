@@ -82,7 +82,7 @@ func (i *instancesV2Logger) InstanceExists(ctx context.Context, node *corev1.Nod
 }
 
 func (i *instancesV2Logger) InstanceShutdown(ctx context.Context, node *corev1.Node) (bool, error) {
-	ret, err := i.InstanceShutdown(ctx, node)
+	ret, err := i.InstancesV2.InstanceShutdown(ctx, node)
 	klog.V(1).InfoS("InstanceShutdown", "node", node, "ret", ret, "err", err)
 	return ret, err
 }
